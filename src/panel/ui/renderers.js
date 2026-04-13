@@ -7,7 +7,7 @@ import {
 import { dom } from "../dom.js";
 import { state } from "../state.js";
 import { renderNotice } from "./notice.js";
-import { formatMessageDate, formatRecentDate, formatTime, messageDayKey } from "./formatters.js";
+import { formatMessageDate, formatTime, messageDayKey } from "./formatters.js";
 import { renderButtonContent, renderCollection, renderIconLabel } from "./helpers.js";
 import { applyAvatar } from "./avatars.js";
 
@@ -170,13 +170,20 @@ export function updateChatHeader() {
   }
 
   const avatarLabel = chatName || shortChannelId(channelId) || "Koalagram";
-  const accent = activeChat?.accentColor || DEFAULT_USER.color;
+  const accent = activeChat?.accentColor || "";
+  const avatarAccent = accent || DEFAULT_USER.color;
+
+  if (accent) {
+    document.body.style.setProperty("--active-channel-accent", accent);
+  } else {
+    document.body.style.removeProperty("--active-channel-accent");
+  }
 
   dom.chatTitle.textContent = title;
   dom.chatSubtitle.textContent = subtitle;
   dom.drawerChannelTitle.textContent = title;
-  applyAvatar(dom.chatAvatar, { label: avatarLabel, color: accent });
-  applyAvatar(dom.channelAvatar, { label: avatarLabel, color: accent });
+  applyAvatar(dom.chatAvatar, { label: avatarLabel, color: avatarAccent });
+  applyAvatar(dom.channelAvatar, { label: avatarLabel, color: avatarAccent });
   document.title = channelId ? `${title} · Koalagram` : "Koalagram";
 }
 
@@ -299,17 +306,14 @@ function createSystemMessageRow(message) {
 function createChatMessageRow(message) {
   const item = document.createElement("li");
   item.className = `message-row ${message.own ? "message-row-own" : "message-row-peer"}`;
-
-  if (!message.own) {
-    const avatar = document.createElement("div");
-    avatar.className = "bubble-avatar";
-    applyAvatar(avatar, {
-      imageUrl: message.avatarUrl,
-      label: message.senderName,
-      color: message.color,
-    });
-    item.append(avatar);
-  }
+  const localUser = state.settings?.user || DEFAULT_USER;
+  const avatar = document.createElement("div");
+  avatar.className = "bubble-avatar";
+  applyAvatar(avatar, {
+    imageUrl: message.own ? (localUser.avatarUrl || message.avatarUrl) : message.avatarUrl,
+    label: message.own ? (localUser.displayName || message.senderName || "You") : message.senderName,
+    color: message.own ? (localUser.color || message.color) : message.color,
+  });
 
   const bubble = document.createElement("article");
   bubble.className = `message-bubble ${message.own ? "message-bubble-own" : "message-bubble-peer"}`;
@@ -332,7 +336,12 @@ function createChatMessageRow(message) {
 
   header.append(author, timestamp);
   bubble.append(header, text);
-  item.append(bubble);
+
+  if (message.own) {
+    item.append(bubble, avatar);
+  } else {
+    item.append(avatar, bubble);
+  }
   return item;
 }
 
@@ -372,11 +381,9 @@ function createMemberItem(member) {
 }
 
 function createStoredChannelItem(channel) {
-  const archive = state.settings.channelHistory[channel.channelId];
-  const messageCount = (archive?.messages || []).filter((record) => record.type === "chat-message").length;
   const selectedChannelId = state.currentChat?.channelId || state.settings?.joinDraft?.channelId || "";
   const isActive = selectedChannelId === channel.channelId;
-  const updatedAt = archive?.updatedAt || channel.lastJoinedAt;
+  const viewer = state.settings?.user || DEFAULT_USER;
 
   const item = document.createElement("li");
   item.className = `channel-list-item${isActive ? " channel-list-item-active" : ""}`;
@@ -387,6 +394,15 @@ function createStoredChannelItem(channel) {
   openButton.className = "channel-list-button";
   openButton.addEventListener("click", () => {
     uiHandlers.onOpenStoredChannel?.(channel);
+  });
+
+  const avatar = document.createElement("div");
+  avatar.className = "channel-list-avatar";
+  avatar.style.setProperty("--viewer-accent", viewer.color || DEFAULT_USER.color);
+  applyAvatar(avatar, {
+    imageUrl: viewer.avatarUrl,
+    label: viewer.displayName,
+    color: viewer.color,
   });
 
   const header = document.createElement("div");
@@ -416,7 +432,7 @@ function createStoredChannelItem(channel) {
   }
 
   copy.append(header);
-  openButton.append(copy);
+  openButton.append(avatar, copy);
 
   const deleteButton = document.createElement("button");
   deleteButton.type = "button";

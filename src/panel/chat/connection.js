@@ -73,6 +73,7 @@ export async function joinChat(user, channel, options = {}) {
   }
 
   await disconnectClient({ preserveChat: false, preserveMessages: false });
+  state.backgroundSuspended = false;
 
   const storedChannel = findStoredChannel(state.settings.channels, channel.channelId);
   const nextChannel = normalizeStoredChannel(
@@ -90,11 +91,7 @@ export async function joinChat(user, channel, options = {}) {
   state.settings.channels = upsertStoredChannel(state.settings.channels, nextChannel);
   state.settings.lastOpenedChat = nextChannel;
   state.currentChat = nextChannel;
-  state.historySynced = false;
-  state.pendingLiveMessages = [];
-  state.seenSyncChunkIds = new Set();
-  state.seenSyncRequestIds = new Set();
-  state.syncedChatMeta = null;
+  resetConnectionSessionState();
   dom.messageInput.value = "";
   clearUnreadAttention();
   clearMessages();
@@ -106,19 +103,10 @@ export async function joinChat(user, channel, options = {}) {
   showBanner("Connecting to Scaledrone...", "info");
   await persistSettings();
 
-  const client = new ScaledroneObservableRoom({
-    channelId: nextChannel.channelId,
-    roomName: DEFAULT_CHANNEL_ROOM,
-    clientData: buildClientData(user),
-    historyCount: nextChannel.historyCount,
-  });
-
-  state.client = client;
-  attachClient(client);
-  updateButtonStates();
+  const client = attachCurrentChatClient(user, nextChannel);
 
   try {
-    await client.connect();
+    await connectAttachedClient(client);
     await persistSettings();
     updateStorageSummary();
     connectionActions.onSetActiveDrawer?.(null);
@@ -168,11 +156,8 @@ export async function disconnectClient({ preserveChat, preserveMessages }) {
     activeClient.close();
   }
 
-  state.historySynced = false;
-  state.pendingLiveMessages = [];
-  state.seenSyncChunkIds = new Set();
-  state.seenSyncRequestIds = new Set();
-  state.syncedChatMeta = null;
+  state.backgroundSuspended = false;
+  resetConnectionSessionState();
   dom.messageInput.value = "";
   clearUnreadAttention();
 
@@ -190,6 +175,63 @@ export async function disconnectClient({ preserveChat, preserveMessages }) {
   applyCurrentChannelToInputs();
   updateChatHeader();
   updateButtonStates();
+}
+
+export async function suspendClientForBackground() {
+  if (!state.currentChat?.channelId || !state.settings?.user?.displayName) {
+    state.backgroundSuspended = false;
+    return;
+  }
+
+  if (!state.client) {
+    state.backgroundSuspended = true;
+    return;
+  }
+
+  clearEmptyHistoryWarningTimer();
+  state.backgroundSuspended = true;
+
+  const activeClient = state.client;
+  state.client = null;
+  activeClient.close();
+
+  resetConnectionSessionState();
+  renderMembers([]);
+  renderStatus("idle");
+  updateButtonStates();
+}
+
+export async function resumeClientFromBackground() {
+  if (
+    !state.backgroundSuspended
+    || state.client
+    || !state.currentChat?.channelId
+    || !state.settings?.user?.displayName
+  ) {
+    return;
+  }
+
+  clearBanner();
+  clearEmptyHistoryWarningTimer();
+  state.backgroundSuspended = false;
+  resetConnectionSessionState();
+  renderStatus("connecting");
+  showBanner("Reconnecting to Scaledrone...", "info");
+
+  const client = attachCurrentChatClient(state.settings.user, state.currentChat);
+
+  try {
+    await connectAttachedClient(client);
+    updateStorageSummary();
+  } catch (error) {
+    if (state.client === client) {
+      state.client = null;
+    }
+
+    renderStatus("error");
+    updateButtonStates();
+    showBanner(error.message || "Unable to reconnect to that Scaledrone channel.", "error");
+  }
 }
 
 export async function publishCurrentChatMeta() {
@@ -216,6 +258,36 @@ export async function publishCurrentChatMeta() {
     chatName: state.currentChat.chatName,
     accentColor: state.currentChat.accentColor,
   };
+}
+
+function resetConnectionSessionState() {
+  state.historySynced = false;
+  state.pendingLiveMessages = [];
+  state.seenSyncChunkIds = new Set();
+  state.seenSyncRequestIds = new Set();
+  state.syncedChatMeta = null;
+}
+
+function attachCurrentChatClient(user, channel) {
+  const client = createRoomClient(user, channel);
+  state.client = client;
+  attachClient(client);
+  updateButtonStates();
+  return client;
+}
+
+function createRoomClient(user, channel) {
+  return new ScaledroneObservableRoom({
+    channelId: channel.channelId,
+    roomName: DEFAULT_CHANNEL_ROOM,
+    clientData: buildClientData(user),
+    historyCount: channel.historyCount,
+  });
+}
+
+async function connectAttachedClient(client) {
+  await client.connect();
+  updateButtonStates();
 }
 
 function attachClient(client) {

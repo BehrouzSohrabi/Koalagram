@@ -5,6 +5,7 @@ const APP_NAME = "Koalagram";
 const APP_ICON_URL = new URL("../assets/icon.png", import.meta.url).href;
 const APP_BADGE_ICON_URL = new URL("../assets/web-app-manifest-192x192.png", import.meta.url).href;
 const WEB_NOTIFICATION_TAG = "koalagram:unread";
+const EXTENSION_NOTIFICATION_ID = "koalagram-unread";
 const WEB_NOTIFICATION_WORKER_URL = new URL("../../webapp-service-worker.js", import.meta.url);
 
 let webNotificationRegistrationPromise = null;
@@ -46,6 +47,18 @@ export async function prepareWebNotifications({ promptIfNeeded = false } = {}) {
 }
 
 export async function showUnreadNotification({ unreadCount = 0, channelId = "", chatName = "", senderName = "Guest", text = "" } = {}) {
+  const title = chatName || (channelId ? shortChannelId(channelId) : APP_NAME);
+  const body = buildNotificationBody({ unreadCount, senderName, text });
+
+  if (canShowExtensionNotification()) {
+    try {
+      await createExtensionNotification({ title, body });
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
   if (getRuntimeMode() !== "web" || typeof globalThis.window === "undefined" || typeof globalThis.Notification !== "function") {
     return false;
   }
@@ -55,8 +68,6 @@ export async function showUnreadNotification({ unreadCount = 0, channelId = "", 
   }
 
   const registration = await getWebNotificationRegistration();
-  const title = chatName || (channelId ? shortChannelId(channelId) : APP_NAME);
-  const body = buildNotificationBody({ unreadCount, senderName, text });
   const options = {
     badge: APP_BADGE_ICON_URL,
     body,
@@ -91,6 +102,10 @@ export async function showUnreadNotification({ unreadCount = 0, channelId = "", 
 }
 
 export async function clearUnreadNotifications() {
+  if (canShowExtensionNotification()) {
+    await clearExtensionNotification();
+  }
+
   if (activeWindowNotification) {
     activeWindowNotification.close();
     activeWindowNotification = null;
@@ -111,6 +126,45 @@ export async function clearUnreadNotifications() {
   } catch (_error) {
     // Ignore notification cleanup failures.
   }
+}
+
+function canShowExtensionNotification() {
+  return getRuntimeMode() === "extension" && typeof globalThis.chrome?.notifications?.create === "function";
+}
+
+async function createExtensionNotification({ title, body }) {
+  return new Promise((resolve, reject) => {
+    globalThis.chrome.notifications.create(
+      EXTENSION_NOTIFICATION_ID,
+      {
+        type: "basic",
+        iconUrl: APP_ICON_URL,
+        title,
+        message: body,
+        priority: 2,
+      },
+      (notificationId) => {
+        if (globalThis.chrome.runtime?.lastError) {
+          reject(new Error(globalThis.chrome.runtime.lastError.message));
+          return;
+        }
+
+        resolve(notificationId);
+      },
+    );
+  });
+}
+
+async function clearExtensionNotification() {
+  if (typeof globalThis.chrome?.notifications?.clear !== "function") {
+    return;
+  }
+
+  await new Promise((resolve) => {
+    globalThis.chrome.notifications.clear(EXTENSION_NOTIFICATION_ID, () => {
+      resolve();
+    });
+  });
 }
 
 async function getWebNotificationRegistration() {

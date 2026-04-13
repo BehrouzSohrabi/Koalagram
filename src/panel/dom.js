@@ -34,6 +34,8 @@ export const dom = {
   messagesEmptyState: document.querySelector("#messages-empty-state"),
   muteToggle: document.querySelector("#mute-toggle"),
   noticeButton: document.querySelector("#notice-button"),
+  noticeActionButton: document.querySelector("#notice-action-button"),
+  noticeActions: document.querySelector("#notice-actions"),
   noticeLiveRegion: document.querySelector("#notice-live-region"),
   noticeMessage: document.querySelector("#notice-message"),
   noticePopover: document.querySelector("#notice-popover"),

@@ -25,6 +25,7 @@ What is implemented right now:
   - web notifications backed by `webapp-service-worker.js`
 - import/export of local settings
 - clear current channel history or clear all local data
+- web app update detection with a reload prompt when a newer deployed version is available
 
 What is not in the project:
 
@@ -141,5 +142,7 @@ Key files:
 ## Notes
 
 - The web app registers a service worker for notification handling, but it does not implement a full offline cache.
+- The web app checks `index.html` for a newer `koalagram-web-version` tag every minute and when the tab becomes visible again.
+- When deploying a new web app version, bump the `koalagram-web-version` meta tag in `index.html` so already-open tabs can detect the update and prompt for reload.
 - The extension content security policy only allows Scaledrone socket connections to `wss://api.scaledrone.com`.
 - If a Scaledrone channel becomes unavailable, Koalagram removes stale saved state for that channel during reconnect/open handling.

@@ -13,12 +13,24 @@ const NOTICE_FADE_OUT_MS = 220;
 export function handleNoticeButtonClick(event) {
   event.stopPropagation();
 
-  if (!state.notice && !resolveFallbackNotice()) {
+  if (!resolveCurrentNotice()) {
     return;
   }
 
   state.noticeOpen = !state.noticeOpen;
   renderNotice();
+}
+
+export function handleNoticeActionClick(event) {
+  event.stopPropagation();
+
+  const notice = resolveCurrentNotice();
+
+  if (typeof notice?.action?.onClick !== "function") {
+    return;
+  }
+
+  void notice.action.onClick();
 }
 
 export function handleDocumentClick(event) {
@@ -56,6 +68,36 @@ export function showBanner(message, tone = "info") {
   }
 }
 
+export function showStickyNotice({ id = crypto.randomUUID(), message, tone = "info", action = null, autoOpen = false } = {}) {
+  state.stickyNotice = {
+    id,
+    message,
+    tone: NOTICE_META[tone] ? tone : "info",
+    action: normalizeNoticeAction(action),
+  };
+
+  if (!state.notice) {
+    state.noticeOpen = Boolean(autoOpen);
+  }
+
+  renderNotice();
+  announceNotice(`${NOTICE_META[state.stickyNotice.tone].title}: ${message}`);
+}
+
+export function clearStickyNotice(noticeId = null) {
+  if (!state.stickyNotice || (noticeId && state.stickyNotice.id !== noticeId)) {
+    return;
+  }
+
+  state.stickyNotice = null;
+
+  if (!state.notice) {
+    state.noticeOpen = false;
+  }
+
+  renderNotice();
+}
+
 export function clearBanner() {
   clearNoticeTimers();
   state.notice = null;
@@ -72,7 +114,7 @@ export function clearBanner() {
 }
 
 export function renderNotice() {
-  const notice = state.notice || resolveFallbackNotice();
+  const notice = resolveCurrentNotice();
 
   if (!notice) {
     dom.noticeButton.hidden = true;
@@ -85,6 +127,10 @@ export function renderNotice() {
     dom.noticePopover.dataset.tone = "";
     dom.noticeTitle.textContent = "Notice";
     dom.noticeMessage.textContent = "";
+    dom.noticeActions.hidden = true;
+    dom.noticeActionButton.textContent = "";
+    dom.noticeActionButton.removeAttribute("title");
+    dom.noticeActionButton.removeAttribute("aria-label");
     dom.noticePopoverIcon.replaceChildren();
     dom.noticeButton.replaceChildren();
     return;
@@ -92,6 +138,7 @@ export function renderNotice() {
 
   const tone = NOTICE_META[notice.tone] ? notice.tone : "info";
   const meta = NOTICE_META[tone];
+  const action = normalizeNoticeAction(notice.action);
 
   dom.noticeButton.hidden = false;
   dom.noticeButton.dataset.tone = tone;
@@ -108,6 +155,11 @@ export function renderNotice() {
   dom.noticeTitle.textContent = meta.title;
   dom.noticeMessage.textContent = notice.message;
   dom.noticePopover.hidden = !state.noticeOpen;
+  dom.noticeActions.hidden = !action;
+  dom.noticeActionButton.textContent = action?.label || "";
+  dom.noticeActionButton.toggleAttribute("hidden", !action);
+  dom.noticeActionButton.setAttribute("aria-label", action?.label || "");
+  dom.noticeActionButton.setAttribute("title", action?.label || "");
   dom.noticePopoverIcon.replaceChildren(createIcon(meta.icon, { size: 18, className: "ui-icon" }));
 }
 
@@ -189,6 +241,10 @@ function resolveFallbackNotice() {
   };
 }
 
+function resolveCurrentNotice() {
+  return state.notice || state.stickyNotice || resolveFallbackNotice();
+}
+
 function scheduleSuccessNoticeHide(noticeId) {
   state.noticeAutoHideTimer = window.setTimeout(() => {
     if (state.notice?.id !== noticeId || state.notice?.tone !== "success") {
@@ -225,4 +281,15 @@ function clearNoticeTimers() {
     window.clearTimeout(state.noticeFadeTimer);
     state.noticeFadeTimer = null;
   }
+}
+
+function normalizeNoticeAction(action) {
+  if (!action?.label || typeof action?.onClick !== "function") {
+    return null;
+  }
+
+  return {
+    label: String(action.label).trim(),
+    onClick: action.onClick,
+  };
 }

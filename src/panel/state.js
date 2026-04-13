@@ -1,5 +1,6 @@
 export const state = {
   activeDrawer: null,
+  backgroundSuspended: false,
   client: null,
   currentChat: null,
   deferredPersistTimer: null,
@@ -20,6 +21,7 @@ export const state = {
   seenSyncChunkIds: new Set(),
   seenSyncRequestIds: new Set(),
   settings: null,
+  stickyNotice: null,
   syncedChatMeta: null,
   unreadCount: 0,
 };

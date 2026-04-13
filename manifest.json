@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "A Scaledrone-backed chat extension with saved channels, presence, and local history.",
   "permissions": [
+    "notifications",
     "storage",
     "sidePanel"
   ],

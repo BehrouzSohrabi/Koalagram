@@ -1,6 +1,7 @@
 import { PANEL_PORT_NAME } from "../shared/constants.js";
 import { prepareWebNotifications } from "../shared/attention.js";
 import { canConnectToExtensionRuntime, getRuntimeMode } from "../shared/runtime.js";
+import { detectWebAppUpdate, WEB_APP_UPDATE_CHECK_INTERVAL_MS } from "../shared/web-update.js";
 import {
   normalizeJoinDraft,
   normalizeStoredChannel,
@@ -21,7 +22,13 @@ import {
   requestHistorySync,
   updateCurrentChannelSettings,
 } from "./chat/archive.js";
-import { configureConnectionActions, disconnectClient, joinChat } from "./chat/connection.js";
+import {
+  configureConnectionActions,
+  disconnectClient,
+  joinChat,
+  resumeClientFromBackground,
+  suspendClientForBackground,
+} from "./chat/connection.js";
 import { addSystemMessage, clearMessages, clearUnreadAttention, configureMessageHandlers } from "./chat/messages.js";
 import { dom } from "./dom.js";
 import { pickRandomFact } from "./facts.js";
@@ -31,12 +38,15 @@ import { state } from "./state.js";
 import { applyStaticUiIcons, renderButtonContent } from "./ui/helpers.js";
 import {
   clearBanner,
+  clearStickyNotice,
   closeNotice,
   handleDocumentClick,
+  handleNoticeActionClick,
   handleNoticeButtonClick,
   pushToast,
   renderNotice,
   showBanner,
+  showStickyNotice,
 } from "./ui/notice.js";
 import {
   applyCurrentChannelToInputs,
@@ -77,9 +87,15 @@ configureUiHandlers({
 
 const LOVE_BURST_PARTICLE_COUNT = 10;
 const LOVE_BUTTON_ACTIVE_MS = 720;
+const WEB_APP_UPDATE_NOTICE_ID = "web-app-update";
+const DRAWER_EDGE_GESTURE_ZONE_PX = 28;
+const DRAWER_GESTURE_LOCK_DISTANCE_PX = 14;
 
 let loveButtonResetTimer = null;
 let toastPositionFrame = 0;
+let webAppUpdateCheckTimer = 0;
+let lastWebAppUpdateCheckAt = 0;
+let drawerGesture = null;
 
 async function init() {
   state.settings = normalizeSettings(null);
@@ -105,6 +121,7 @@ async function init() {
   renderStatus("idle");
   renderSetupPanels();
   updateDrawerState();
+  startWebAppUpdateChecks();
 
   if (state.settings.lastOpenedChat?.channelId && state.settings.user.displayName) {
     await joinChat(
@@ -160,7 +177,12 @@ function bindEvents() {
   dom.openInfoButton.addEventListener("click", () => setActiveDrawer("info"));
   dom.closeInfoButton.addEventListener("click", () => setActiveDrawer(null));
   dom.noticeButton.addEventListener("click", handleNoticeButtonClick);
+  dom.noticeActionButton.addEventListener("click", handleNoticeActionClick);
   dom.drawerScrim.addEventListener("click", () => setActiveDrawer(null));
+  dom.phoneShell.addEventListener("touchstart", handleDrawerTouchStart, { passive: true });
+  dom.phoneShell.addEventListener("touchmove", handleDrawerTouchMove, { passive: false });
+  dom.phoneShell.addEventListener("touchend", handleDrawerTouchEnd, { passive: true });
+  dom.phoneShell.addEventListener("touchcancel", handleDrawerTouchCancel, { passive: true });
 
   document.addEventListener("click", handleDocumentClick);
   window.addEventListener("keydown", handleWindowKeydown);
@@ -173,6 +195,7 @@ function bindEvents() {
       toastPositionFrame = 0;
     }
 
+    stopWebAppUpdateChecks();
     state.client?.close();
     disconnectPanelPresence();
   });
@@ -227,12 +250,29 @@ function disconnectPanelPresence() {
 }
 
 function handleWindowFocus() {
+  connectPanelPresence();
   clearUnreadAttention();
+  void resumeClientFromBackground();
+  void maybeCheckForWebAppUpdate();
 }
 
 function handleVisibilityChange() {
+  if (canConnectToExtensionRuntime()) {
+    if (document.visibilityState === "visible") {
+      connectPanelPresence();
+      clearUnreadAttention();
+      void resumeClientFromBackground();
+      return;
+    }
+
+    disconnectPanelPresence();
+    void suspendClientForBackground();
+    return;
+  }
+
   if (document.visibilityState === "visible") {
     clearUnreadAttention();
+    void maybeCheckForWebAppUpdate({ force: true });
   }
 }
 
@@ -275,6 +315,222 @@ function updateDrawerState() {
   dom.setupDrawer.setAttribute("aria-hidden", String(!setupOpen));
   dom.infoDrawer.setAttribute("aria-hidden", String(!infoOpen));
   dom.drawerScrim.setAttribute("aria-hidden", String(!anyOpen));
+}
+
+function handleDrawerTouchStart(event) {
+  if (drawerGesture || event.touches.length !== 1) {
+    return;
+  }
+
+  const [touch] = event.changedTouches;
+
+  if (!touch) {
+    return;
+  }
+
+  const shellRect = dom.phoneShell.getBoundingClientRect();
+
+  if (!isPointInsideRect(touch.clientX, touch.clientY, shellRect)) {
+    return;
+  }
+
+  const leftDistance = touch.clientX - shellRect.left;
+  const rightDistance = shellRect.right - touch.clientX;
+  const onScrim = event.target === dom.drawerScrim;
+  let drawer = null;
+  let mode = "open";
+
+  if (state.activeDrawer === "setup" && (
+    onScrim
+    || isPointInsideRect(touch.clientX, touch.clientY, dom.setupDrawer.getBoundingClientRect())
+  )) {
+    drawer = "setup";
+    mode = "close";
+  } else if (state.activeDrawer === "info" && (
+    onScrim
+    || isPointInsideRect(touch.clientX, touch.clientY, dom.infoDrawer.getBoundingClientRect())
+  )) {
+    drawer = "info";
+    mode = "close";
+  } else if (!state.activeDrawer && leftDistance <= DRAWER_EDGE_GESTURE_ZONE_PX) {
+    drawer = "setup";
+  } else if (!state.activeDrawer && rightDistance <= DRAWER_EDGE_GESTURE_ZONE_PX) {
+    drawer = "info";
+  }
+
+  if (!drawer) {
+    return;
+  }
+
+  const drawerElement = getDrawerElement(drawer);
+  const drawerWidth = drawerElement.getBoundingClientRect().width;
+
+  if (!drawerWidth) {
+    return;
+  }
+
+  drawerGesture = {
+    activated: false,
+    drawer,
+    drawerWidth,
+    mode,
+    openFraction: mode === "close" ? 1 : 0,
+    startX: touch.clientX,
+    startY: touch.clientY,
+    touchId: touch.identifier,
+  };
+}
+
+function handleDrawerTouchMove(event) {
+  if (!drawerGesture) {
+    return;
+  }
+
+  if (event.touches.length !== 1) {
+    resetDrawerGesture();
+    return;
+  }
+
+  const touch = findTouchByIdentifier(event.touches, drawerGesture.touchId);
+
+  if (!touch) {
+    return;
+  }
+
+  const deltaX = touch.clientX - drawerGesture.startX;
+  const deltaY = touch.clientY - drawerGesture.startY;
+
+  if (!drawerGesture.activated) {
+    if (Math.abs(deltaY) > DRAWER_GESTURE_LOCK_DISTANCE_PX && Math.abs(deltaY) > Math.abs(deltaX)) {
+      resetDrawerGesture();
+      return;
+    }
+
+    if (Math.abs(deltaX) < DRAWER_GESTURE_LOCK_DISTANCE_PX || Math.abs(deltaX) <= Math.abs(deltaY)) {
+      return;
+    }
+
+    beginDrawerGesture(drawerGesture.drawer);
+    drawerGesture.activated = true;
+  }
+
+  drawerGesture.openFraction = computeDrawerOpenFraction(drawerGesture, touch.clientX);
+  applyDrawerGesture(drawerGesture);
+  event.preventDefault();
+}
+
+function handleDrawerTouchEnd(event) {
+  if (!drawerGesture) {
+    return;
+  }
+
+  const touch = findTouchByIdentifier(event.changedTouches, drawerGesture.touchId);
+
+  if (!touch) {
+    return;
+  }
+
+  if (!drawerGesture.activated) {
+    drawerGesture = null;
+    return;
+  }
+
+  const openFraction = computeDrawerOpenFraction(drawerGesture, touch.clientX);
+  finishDrawerGesture(openFraction >= 0.5);
+}
+
+function handleDrawerTouchCancel() {
+  if (!drawerGesture) {
+    return;
+  }
+
+  resetDrawerGesture();
+}
+
+function beginDrawerGesture(drawer) {
+  closeNotice();
+  dom.phoneShell.classList.add("drawer-gesture-active", "drawer-active");
+  dom.phoneShell.classList.toggle("show-setup", drawer === "setup");
+  dom.phoneShell.classList.toggle("show-info", drawer === "info");
+  dom.setupDrawer.setAttribute("aria-hidden", String(drawer !== "setup"));
+  dom.infoDrawer.setAttribute("aria-hidden", String(drawer !== "info"));
+  dom.drawerScrim.setAttribute("aria-hidden", "false");
+}
+
+function applyDrawerGesture(gesture) {
+  const drawerElement = getDrawerElement(gesture.drawer);
+  const offset = gesture.drawer === "setup"
+    ? (gesture.openFraction - 1) * gesture.drawerWidth
+    : (1 - gesture.openFraction) * gesture.drawerWidth;
+
+  drawerElement.style.transform = `translateX(${offset.toFixed(2)}px)`;
+  dom.drawerScrim.style.opacity = String(gesture.openFraction);
+  dom.drawerScrim.style.pointerEvents = gesture.openFraction > 0 ? "auto" : "none";
+}
+
+function finishDrawerGesture(shouldOpen) {
+  const nextDrawer = shouldOpen ? drawerGesture.drawer : null;
+
+  dom.phoneShell.classList.remove("drawer-gesture-active");
+  setActiveDrawer(nextDrawer);
+  clearDrawerGestureStyles();
+  drawerGesture = null;
+}
+
+function resetDrawerGesture() {
+  dom.phoneShell.classList.remove("drawer-gesture-active");
+  updateDrawerState();
+  clearDrawerGestureStyles();
+  drawerGesture = null;
+}
+
+function clearDrawerGestureStyles() {
+  dom.setupDrawer.style.transform = "";
+  dom.infoDrawer.style.transform = "";
+  dom.drawerScrim.style.opacity = "";
+  dom.drawerScrim.style.pointerEvents = "";
+}
+
+function computeDrawerOpenFraction(gesture, currentX) {
+  const deltaX = currentX - gesture.startX;
+
+  if (gesture.drawer === "setup") {
+    return clampFraction(
+      gesture.mode === "open"
+        ? deltaX / gesture.drawerWidth
+        : 1 + (deltaX / gesture.drawerWidth),
+    );
+  }
+
+  return clampFraction(
+    gesture.mode === "open"
+      ? (-deltaX) / gesture.drawerWidth
+      : 1 - (deltaX / gesture.drawerWidth),
+  );
+}
+
+function clampFraction(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function getDrawerElement(drawer) {
+  return drawer === "setup" ? dom.setupDrawer : dom.infoDrawer;
+}
+
+function isPointInsideRect(x, y, rect) {
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function findTouchByIdentifier(touchList, identifier) {
+  for (let index = 0; index < touchList.length; index += 1) {
+    const touch = touchList.item(index);
+
+    if (touch && touch.identifier === identifier) {
+      return touch;
+    }
+  }
+
+  return null;
 }
 
 function toggleIdentityPanel(nextOpen = !state.identityPanelOpen) {
@@ -361,6 +617,65 @@ function shouldOpenJoinPanelByDefault() {
     && state.currentChat?.channelId !== draftChannelId;
 }
 
+function startWebAppUpdateChecks() {
+  if (getRuntimeMode() !== "web") {
+    clearStickyNotice(WEB_APP_UPDATE_NOTICE_ID);
+    return;
+  }
+
+  void maybeCheckForWebAppUpdate({ force: true });
+
+  stopWebAppUpdateChecks();
+  webAppUpdateCheckTimer = window.setInterval(() => {
+    if (document.visibilityState !== "visible") {
+      return;
+    }
+
+    void maybeCheckForWebAppUpdate();
+  }, WEB_APP_UPDATE_CHECK_INTERVAL_MS);
+}
+
+function stopWebAppUpdateChecks() {
+  if (!webAppUpdateCheckTimer) {
+    return;
+  }
+
+  window.clearInterval(webAppUpdateCheckTimer);
+  webAppUpdateCheckTimer = 0;
+}
+
+async function maybeCheckForWebAppUpdate({ force = false } = {}) {
+  if (getRuntimeMode() !== "web" || state.stickyNotice?.id === WEB_APP_UPDATE_NOTICE_ID) {
+    return;
+  }
+
+  const now = Date.now();
+
+  if (!force && now - lastWebAppUpdateCheckAt < 5000) {
+    return;
+  }
+
+  lastWebAppUpdateCheckAt = now;
+
+  const update = await detectWebAppUpdate();
+
+  if (!update) {
+    return;
+  }
+
+  showStickyNotice({
+    id: WEB_APP_UPDATE_NOTICE_ID,
+    tone: "info",
+    message: `Web app update ready (${update.currentVersion} to ${update.latestVersion}). Reload when you're ready.`,
+    action: {
+      label: "Reload",
+      onClick: () => globalThis.location.reload(),
+    },
+    autoOpen: true,
+  });
+  stopWebAppUpdateChecks();
+}
+
 async function handleUserInput() {
   state.settings.user = normalizeUserIdentity({
     displayName: dom.displayNameInput.value,
@@ -370,6 +685,7 @@ async function handleUserInput() {
 
   updateUserPreview();
   updateChatHeader();
+  updateStorageSummary();
   await persistSettings();
 }
 

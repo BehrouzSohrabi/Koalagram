@@ -1,6 +1,6 @@
 import { ScaledroneObservableRoom } from "../lib/scaledrone-client.js";
 import { DEFAULT_CHANNEL_ROOM, PANEL_PORT_NAME, STORAGE_KEY } from "../shared/constants.js";
-import { syncUnreadAttention } from "../shared/attention.js";
+import { clearUnreadNotifications, showUnreadNotification, syncUnreadAttention } from "../shared/attention.js";
 import {
   buildClientData,
   currentSenderKey,
@@ -39,6 +39,13 @@ function initializeBackground() {
 }
 
 initializeBackground();
+
+if (chrome.notifications?.onClicked) {
+  chrome.notifications.onClicked.addListener(() => {
+    clearUnreadAttention();
+    void openSidePanelFromNotification();
+  });
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   initializeBackground();
@@ -134,6 +141,8 @@ function attachMonitorClient(client, context, fingerprint) {
     }
 
     const packet = event.detail.message;
+    const payload = packet?.data;
+    const text = extractMessageText(payload);
 
     if (!shouldCountAsUnread(packet, context, client)) {
       return;
@@ -141,6 +150,13 @@ function attachMonitorClient(client, context, fingerprint) {
 
     monitorState.unreadCount += 1;
     syncActionBadge();
+    void showUnreadNotification({
+      unreadCount: monitorState.unreadCount,
+      channelId: context.channel.channelId,
+      chatName: context.channel.chatName,
+      senderName: payload?.senderName || resolveMemberIdentity(packet?.member).displayName,
+      text,
+    });
   });
 
   client.addEventListener("error", (event) => {
@@ -237,6 +253,7 @@ function clearMonitorRefresh() {
 function clearUnreadAttention() {
   monitorState.unreadCount = 0;
   syncActionBadge();
+  void clearUnreadNotifications();
 }
 
 function syncActionBadge() {
@@ -273,4 +290,52 @@ function buildFingerprint(context) {
     context.user.avatarUrl,
     context.user.color,
   ].join("|");
+}
+
+async function openSidePanelFromNotification() {
+  if (typeof chrome.sidePanel?.open !== "function") {
+    return;
+  }
+
+  try {
+    const windowInfo = await getLastFocusedWindow();
+
+    if (!windowInfo?.id) {
+      return;
+    }
+
+    if (windowInfo.state === "minimized" && typeof chrome.windows?.update === "function") {
+      await new Promise((resolve, reject) => {
+        chrome.windows.update(windowInfo.id, { focused: true, state: "normal" }, () => {
+          if (chrome.runtime?.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+
+          resolve();
+        });
+      }).catch(() => {});
+    }
+
+    await chrome.sidePanel.open({ windowId: windowInfo.id });
+  } catch (_error) {
+    // Ignore notification click focus failures.
+  }
+}
+
+async function getLastFocusedWindow() {
+  if (typeof chrome.windows?.getLastFocused !== "function") {
+    return null;
+  }
+
+  return new Promise((resolve, reject) => {
+    chrome.windows.getLastFocused({}, (windowInfo) => {
+      if (chrome.runtime?.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      resolve(windowInfo || null);
+    });
+  });
 }

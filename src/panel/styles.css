@@ -149,6 +149,7 @@ code {
   height: 100vh;
   overflow: hidden;
   background: var(--shell-bg);
+  overscroll-behavior-x: contain;
 }
 
 .chat-screen {
@@ -178,7 +179,7 @@ code {
 .chat-head {
   min-width: 0;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   align-items: center;
 }
@@ -203,8 +204,6 @@ code {
 .channel-copy span,
 .message-time,
 .member-meta,
-.channel-list-id,
-.channel-list-meta,
 .messages-empty-state p {
   margin: 0;
   color: var(--copy-muted);
@@ -371,10 +370,26 @@ body[data-theme="dusk"] .ghost-button {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.primary-button,
-.send-button {
+.primary-button {
   background: linear-gradient(180deg, var(--accent) 0%, var(--accent-strong) 100%);
   color: white;
+}
+
+.send-button {
+  background: linear-gradient(
+    180deg,
+    var(--active-channel-accent, var(--accent)) 0%,
+    color-mix(in srgb, var(--active-channel-accent, var(--accent)) 78%, black) 100%
+  );
+  color: white;
+}
+
+body[data-theme="dusk"] .send-button {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--active-channel-accent, var(--accent)) 88%, white) 0%,
+    var(--active-channel-accent, var(--accent)) 100%
+  );
 }
 
 .danger-button {
@@ -385,6 +400,7 @@ body[data-theme="dusk"] .ghost-button {
 .chat-avatar,
 .channel-avatar,
 .profile-avatar-preview,
+.channel-list-avatar,
 .bubble-avatar,
 .member-avatar {
   display: inline-flex;
@@ -414,6 +430,22 @@ body[data-theme="dusk"] .ghost-button {
   width: 42px;
   height: 42px;
   background: color-mix(in srgb, var(--chat-accent, var(--accent)) 20%, white);
+  color: var(--accent-strong);
+}
+
+.chat-avatar {
+  display: none;
+}
+
+.channel-list-avatar,
+.bubble-avatar,
+.member-avatar {
+  width: 34px;
+  height: 34px;
+}
+
+.channel-list-avatar {
+  background: color-mix(in srgb, var(--viewer-accent, var(--accent)) 18%, white);
   color: var(--accent-strong);
 }
 
@@ -449,6 +481,11 @@ body[data-theme="dusk"] .ghost-button {
 
 .phone-shell.show-info .drawer-right {
   transform: translateX(0);
+}
+
+.phone-shell.drawer-gesture-active .drawer,
+.phone-shell.drawer-gesture-active .drawer-scrim {
+  transition: none;
 }
 
 .drawer-scrim {
@@ -758,6 +795,16 @@ button[aria-controls="open-channel-body"][aria-expanded="false"] {
   word-break: break-word;
 }
 
+.notice-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.notice-action-button {
+  min-width: 92px;
+}
+
 .notice-popover[data-tone="success"] {
   border-color: rgba(35, 162, 109, 0.18);
 }
@@ -791,6 +838,19 @@ button[aria-controls="open-channel-body"][aria-expanded="false"] {
   min-height: 0;
   padding-bottom: 18px;
   flex-grow: 1;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--active-channel-accent, var(--accent)) 10%, transparent) 0%,
+    transparent 220px
+  );
+}
+
+body[data-theme="dusk"] .chat-scroll {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--active-channel-accent, var(--accent)) 14%, transparent) 0%,
+    transparent 220px
+  );
 }
 
 .message-list,
@@ -886,8 +946,6 @@ body[data-theme="dusk"] .message-date-divider time {
 
 .bubble-avatar,
 .member-avatar {
-  width: 34px;
-  height: 34px;
   background: color-mix(in srgb, var(--message-accent, var(--accent)) 20%, white);
   color: var(--accent-strong);
 }
@@ -999,11 +1057,14 @@ body[data-theme="dusk"] .channel-list-empty {
 
 .channel-list-button {
   width: 100%;
-  display: block;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.54);
-  padding: 6px 6px 6px 12px;
+  padding: 10px 12px;
   text-align: left;
   transition: transform var(--transition), background var(--transition), border-color var(--transition), box-shadow var(--transition);
 }
@@ -1035,7 +1096,7 @@ body[data-theme="dusk"] .channel-list-item-active .channel-list-button {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .channel-list-header {
@@ -1055,13 +1116,6 @@ body[data-theme="dusk"] .channel-list-item-active .channel-list-button {
 .channel-list-title {
   font-size: .9em;
   margin-left: 6px;
-}
-
-.channel-list-id,
-.channel-list-meta {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .channel-status-dot {
