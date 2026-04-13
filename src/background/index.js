@@ -1,5 +1,6 @@
 import { ScaledroneObservableRoom } from "../lib/scaledrone-client.js";
 import { DEFAULT_CHANNEL_ROOM, PANEL_PORT_NAME, STORAGE_KEY } from "../shared/constants.js";
+import { syncUnreadAttention } from "../shared/attention.js";
 import {
   buildClientData,
   currentSenderKey,
@@ -239,16 +240,7 @@ function clearUnreadAttention() {
 }
 
 function syncActionBadge() {
-  const text = monitorState.unreadCount > 0
-    ? (monitorState.unreadCount > 99 ? "99+" : String(monitorState.unreadCount))
-    : "";
-  const title = monitorState.unreadCount > 0
-    ? `Koalagram (${monitorState.unreadCount} unread)`
-    : "Open Koalagram";
-
-  void chrome.action.setBadgeBackgroundColor({ color: "#d93025" }).catch(() => {});
-  void chrome.action.setBadgeText({ text }).catch(() => {});
-  void chrome.action.setTitle({ title }).catch(() => {});
+  void syncUnreadAttention(monitorState.unreadCount);
 }
 
 function normalizeMonitorContext(settings) {

@@ -239,7 +239,7 @@ function attachClient(client) {
     state.historySynced = false;
     state.pendingLiveMessages = [];
     renderStatus("connected");
-    addSystemMessage(`Connected to ${shortChannelId(state.currentChat.channelId)} as ${state.settings.user.displayName}.`);
+    addSystemMessage("Connected.");
     showBanner("Connected. Loading channel history...", "success");
     dom.messageInput.focus();
   });

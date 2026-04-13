@@ -6,6 +6,7 @@ export const state = {
   historySynced: false,
   identityPanelOpen: false,
   memberCount: 0,
+  manualSyncSession: null,
   messages: [],
   messageKeys: new Set(),
   notice: null,

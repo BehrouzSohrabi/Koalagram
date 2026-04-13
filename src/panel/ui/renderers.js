@@ -175,7 +175,6 @@ export function updateChatHeader() {
   dom.chatTitle.textContent = title;
   dom.chatSubtitle.textContent = subtitle;
   dom.drawerChannelTitle.textContent = title;
-  dom.drawerChannelSubtitle.textContent = channelId || "Open a channel to edit its settings.";
   applyAvatar(dom.chatAvatar, { label: avatarLabel, color: accent });
   applyAvatar(dom.channelAvatar, { label: avatarLabel, color: accent });
   document.title = channelId ? `${title} · Koalagram` : "Koalagram";
@@ -239,10 +238,6 @@ export function updateStorageSummary() {
   const activeCount = activeChannelId
     ? ((state.settings.channelHistory[activeChannelId]?.messages || []).filter((record) => record.type === "chat-message").length)
     : 0;
-
-  dom.storedChannelsSummary.textContent = state.settings.channels.length > 0
-    ? `${state.settings.channels.length} saved${activeChannelId ? " · 1 active" : ""}`
-    : "No channels saved";
 
   if (!activeChannelId) {
     dom.storageSummary.textContent = `${channelEntries.length} channels saved`;
@@ -410,17 +405,6 @@ function createStoredChannelItem(channel) {
   title.className = "channel-list-title";
   title.textContent = channel.chatName || `Channel ${shortChannelId(channel.channelId)}`;
 
-  const channelId = document.createElement("div");
-  channelId.className = "channel-list-id";
-  channelId.textContent = channel.channelId;
-
-  const meta = document.createElement("div");
-  meta.className = "channel-list-meta";
-  meta.textContent = [
-    `${messageCount} message${messageCount === 1 ? "" : "s"}`,
-    updatedAt ? `Updated ${formatRecentDate(updatedAt)}` : "",
-  ].filter(Boolean).join(" · ");
-
   titleGroup.append(dot, title);
   header.append(titleGroup);
 
@@ -431,7 +415,7 @@ function createStoredChannelItem(channel) {
     header.append(activePill);
   }
 
-  copy.append(header, channelId, meta);
+  copy.append(header);
   openButton.append(copy);
 
   const deleteButton = document.createElement("button");

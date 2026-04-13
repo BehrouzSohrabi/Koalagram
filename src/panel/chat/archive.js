@@ -25,6 +25,9 @@ let archiveActions = {
   onPublishCurrentChatMeta: null,
 };
 
+const MANUAL_SYNC_RESPONSE_TIMEOUT_MS = 3200;
+const MANUAL_SYNC_SETTLE_DELAY_MS = 700;
+
 export function configureArchiveActions(actions) {
   archiveActions = {
     ...archiveActions,
@@ -237,23 +240,38 @@ export function applyChatMetaToState(channelId, nextMeta, { source = "storage", 
 
 export async function requestHistorySync(reason = "join") {
   if (!state.client || state.client.state !== "connected" || !state.currentChat?.channelId) {
-    return;
+    return null;
   }
 
   const archive = getChannelArchive(state.currentChat.channelId);
+  const requestId = crypto.randomUUID();
 
-  await state.client.publish({
-    type: "history-sync-request",
-    requestId: crypto.randomUUID(),
-    channelId: state.currentChat.channelId,
-    requesterKey: currentSenderKey(),
-    requesterDeviceId: currentDeviceId(),
-    requesterClientId: state.client.clientId || "",
-    localCount: archive?.messages.length || 0,
-    newestTs: archive?.messages.at(-1)?.ts || 0,
-    reason,
-    ts: Date.now(),
-  });
+  if (reason === "manual") {
+    startManualSyncSession(requestId, state.currentChat.channelId);
+  }
+
+  try {
+    await state.client.publish({
+      type: "history-sync-request",
+      requestId,
+      channelId: state.currentChat.channelId,
+      requesterKey: currentSenderKey(),
+      requesterDeviceId: currentDeviceId(),
+      requesterClientId: state.client.clientId || "",
+      localCount: archive?.messages.length || 0,
+      newestTs: archive?.messages.at(-1)?.ts || 0,
+      reason,
+      ts: Date.now(),
+    });
+    return requestId;
+  } catch (error) {
+    if (reason === "manual") {
+      clearManualSyncSession(requestId);
+      throw error;
+    }
+
+    return null;
+  }
 }
 
 export async function handleHistorySyncRequest(payload) {
@@ -290,20 +308,24 @@ export async function handleHistorySyncRequest(payload) {
 
   const chunks = chunkRecords(messages, SYNC_CHUNK_SIZE);
 
-  for (let index = 0; index < chunks.length; index += 1) {
-    await state.client.publish({
-      type: "history-sync-response",
-      responseId: crypto.randomUUID(),
-      requestId: payload.requestId,
-      responderKey: currentSenderKey(),
-      responderDeviceId: currentDeviceId(),
-      responderClientId: state.client.clientId || "",
-      channelId: payload.channelId,
-      chunkIndex: index + 1,
-      chunkCount: chunks.length,
-      messages: chunks[index],
-      ts: Date.now(),
-    });
+  try {
+    for (let index = 0; index < chunks.length; index += 1) {
+      await state.client.publish({
+        type: "history-sync-response",
+        responseId: crypto.randomUUID(),
+        requestId: payload.requestId,
+        responderKey: currentSenderKey(),
+        responderDeviceId: currentDeviceId(),
+        responderClientId: state.client.clientId || "",
+        channelId: payload.channelId,
+        chunkIndex: index + 1,
+        chunkCount: chunks.length,
+        messages: chunks[index],
+        ts: Date.now(),
+      });
+    }
+  } catch (error) {
+    showBanner(error.message || "Unable to share local history with a connected peer.", "warning");
   }
 }
 
@@ -328,6 +350,10 @@ export function handleHistorySyncResponse(payload) {
   }
 
   const addedCount = mergeStoredRecords(payload.channelId, records, { renderIfActive: true });
+
+  if (trackManualSyncResponse(payload, addedCount)) {
+    return;
+  }
 
   if (addedCount > 0) {
     showBanner(`Synced ${addedCount} message${addedCount === 1 ? "" : "s"} from connected peers.`, "success");
@@ -416,6 +442,106 @@ function rememberSeenId(set, key) {
   }
 
   return false;
+}
+
+function startManualSyncSession(requestId, channelId) {
+  clearManualSyncSession();
+
+  state.manualSyncSession = {
+    requestId,
+    channelId,
+    addedCount: 0,
+    responderIds: new Set(),
+    settleTimer: null,
+    timeoutTimer: window.setTimeout(() => {
+      const session = state.manualSyncSession;
+
+      if (!session || session.requestId !== requestId) {
+        return;
+      }
+
+      if (state.currentChat?.channelId !== channelId) {
+        clearManualSyncSession(requestId);
+        return;
+      }
+
+      clearManualSyncSession(requestId);
+      showBanner("No connected peers shared any local history for this channel.", "warning");
+    }, MANUAL_SYNC_RESPONSE_TIMEOUT_MS),
+  };
+}
+
+function trackManualSyncResponse(payload, addedCount) {
+  const session = state.manualSyncSession;
+
+  if (!session || payload.requestId !== session.requestId || payload.channelId !== session.channelId) {
+    return false;
+  }
+
+  session.addedCount += addedCount;
+  session.responderIds.add(
+    payload.responderClientId || payload.responderDeviceId || payload.responderKey || payload.responseId || "unknown",
+  );
+
+  if (session.timeoutTimer) {
+    window.clearTimeout(session.timeoutTimer);
+    session.timeoutTimer = null;
+  }
+
+  if (session.settleTimer) {
+    window.clearTimeout(session.settleTimer);
+  }
+
+  session.settleTimer = window.setTimeout(() => {
+    finalizeManualSyncSession(payload.requestId);
+  }, MANUAL_SYNC_SETTLE_DELAY_MS);
+
+  return true;
+}
+
+function finalizeManualSyncSession(requestId) {
+  const session = state.manualSyncSession;
+
+  if (!session || session.requestId !== requestId) {
+    return;
+  }
+
+  const addedCount = session.addedCount;
+  const responderCount = session.responderIds.size;
+
+  clearManualSyncSession(requestId);
+
+  if (state.currentChat?.channelId !== session.channelId) {
+    return;
+  }
+
+  if (addedCount > 0) {
+    showBanner(
+      `Synced ${addedCount} new message${addedCount === 1 ? "" : "s"} from ${responderCount} connected peer${responderCount === 1 ? "" : "s"}.`,
+      "success",
+    );
+    return;
+  }
+
+  showBanner("Connected peers replied, but there were no newer messages to sync.", "info");
+}
+
+function clearManualSyncSession(requestId = null) {
+  const session = state.manualSyncSession;
+
+  if (!session || (requestId && session.requestId !== requestId)) {
+    return;
+  }
+
+  if (session.timeoutTimer) {
+    window.clearTimeout(session.timeoutTimer);
+  }
+
+  if (session.settleTimer) {
+    window.clearTimeout(session.settleTimer);
+  }
+
+  state.manualSyncSession = null;
 }
 
 function chunkRecords(records, size) {

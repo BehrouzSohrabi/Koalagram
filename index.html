@@ -4,9 +4,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#eff5fb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Koalagram">
   <title>Koalagram</title>
-  <link rel="icon" type="image/svg+xml" href="./src/assets/icon.png">
-  <link rel="shortcut icon" href="./src/assets/icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./src/assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="./src/assets/favicon-16x16.png">
+  <link rel="shortcut icon" href="./src/assets/favicon-32x32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./src/assets/apple-touch-icon.png">
+  <link rel="manifest" href="./site.webmanifest">
   <link rel="stylesheet" href="./src/panel/styles.css">
 </head>
 
@@ -34,32 +41,29 @@
               <strong id="profile-name-preview">Unnamed user</strong>
               <span id="profile-meta-preview">Global identity</span>
             </div>
-            <span id="identity-toggle-action" class="drawer-inline-action">Edit</span>
+            <span id="identity-toggle-action" class="drawer-inline-action"></span>
           </button>
-        </section>
 
-        <section id="identity-panel" class="drawer-section drawer-section-collapsible" hidden>
-          <div class="section-heading">
-            <h3>You</h3>
-            <span class="section-note">Used in every channel</span>
-          </div>
+          <section id="identity-panel" class="drawer-section-collapsible" hidden>
 
-          <div class="stack">
-            <label class="field">
-              <span>Name</span>
-              <input id="display-name-input" type="text" maxlength="32" placeholder="Koala Ops">
-            </label>
+            <div class="stack">
+              <label class="field">
+                <span>Name</span>
+                <input id="display-name-input" type="text" maxlength="32" placeholder="Koala Ops">
+              </label>
 
-            <label class="field">
-              <span>Avatar image URL</span>
-              <input id="avatar-input" type="url" placeholder="https://example.com/avatar.png">
-            </label>
+              <label class="field">
+                <span>Avatar image URL</span>
+                <input id="avatar-input" type="url" placeholder="https://example.com/avatar.png">
+              </label>
 
-            <label class="field">
-              <span>Fallback color</span>
-              <input id="accent-color-input" type="color" value="#4c8df6">
-            </label>
-          </div>
+              <label class="field">
+                <span>Avatar color</span>
+                <input id="accent-color-input" type="color" value="#4c8df6">
+              </label>
+            </div>
+          </section>
+
         </section>
 
         <section class="drawer-section channel-create-section">
@@ -69,9 +73,7 @@
               <span class="section-note">Paste a channel ID to add it here</span>
             </div>
             <button id="open-channel-toggle-button" type="button" class="ghost-button small-button"
-              aria-controls="open-channel-body" aria-expanded="false">
-              New
-            </button>
+              aria-controls="open-channel-body" aria-expanded="false" aria-label="Create new channel"></button>
           </div>
 
           <div id="open-channel-body" class="channel-create-body" hidden>
@@ -90,7 +92,6 @@
         <section class="drawer-section">
           <div class="section-heading">
             <h3>Saved Channels</h3>
-            <span id="stored-channels-summary" class="section-note">No channels saved</span>
           </div>
           <ul id="stored-channels-list" class="channel-list empty-list">No saved channels yet.</ul>
         </section>
@@ -109,7 +110,6 @@
           <div id="channel-avatar" class="channel-avatar">KG</div>
           <div class="channel-copy">
             <strong id="drawer-channel-title">Koalagram</strong>
-            <span id="drawer-channel-subtitle">Local setup and preferences</span>
           </div>
           <div id="status-pill" class="status-pill status-idle">Ready</div>
         </section>
@@ -117,7 +117,6 @@
         <section class="drawer-section">
           <div class="section-heading">
             <h3>Channel Settings</h3>
-            <span class="section-note">Saved per channel</span>
           </div>
 
           <div class="stack">
@@ -156,7 +155,6 @@
         <section class="drawer-section">
           <div class="section-heading">
             <h3>Preferences</h3>
-            <span class="section-note">Stored locally</span>
           </div>
 
           <div class="toggle-list">
@@ -169,12 +167,6 @@
               <input id="mute-toggle" type="checkbox">
             </label>
           </div>
-
-          <div class="dual-actions">
-            <button id="export-button" type="button" class="secondary-button">Export</button>
-            <button id="import-button" type="button" class="ghost-button">Import</button>
-          </div>
-          <input id="import-file-input" type="file" accept="application/json" hidden>
         </section>
 
         <section class="drawer-section">
@@ -183,13 +175,15 @@
             <span id="storage-summary" class="section-note">0 chats saved</span>
           </div>
 
-          <div class="dual-actions">
-            <button id="sync-now-button" type="button" class="secondary-button">Sync Now</button>
+          <div class="actions-list">
+            <input id="import-file-input" type="file" accept="application/json" hidden>
+            <button id="sync-now-button" type="button" class="ghost-button">Sync Now</button>
+            <button id="export-button" type="button" class="ghost-button">Export</button>
+            <button id="import-button" type="button" class="ghost-button">Import</button>
             <button id="clear-current-storage-button" type="button" class="ghost-button">Clear This Channel</button>
+            <button id="clear-all-storage-button" type="button" class="danger-button">Clear All Local Data</button>
+            <button id="leave-button" type="button" class="danger-button" disabled>Leave Channel</button>
           </div>
-
-          <button id="clear-all-storage-button" type="button" class="danger-button">Clear All Local Data</button>
-          <button id="leave-button" type="button" class="danger-button" disabled>Leave Channel</button>
         </section>
       </aside>
 

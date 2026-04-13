@@ -1,5 +1,9 @@
 import { isChatMetaMessage, isHistorySyncRequest, isHistorySyncResponse } from "../../shared/chat.js";
-import { canSetExtensionActionBadge } from "../../shared/runtime.js";
+import {
+  clearUnreadNotifications,
+  syncUnreadAttention,
+  showUnreadNotification,
+} from "../../shared/attention.js";
 import { MAX_MESSAGES } from "../config.js";
 import { state } from "../state.js";
 import { renderMessages, updateStorageSummary } from "../ui/renderers.js";
@@ -60,7 +64,7 @@ export function processIncomingMessage(packet) {
   renderMessages(state.messages);
 
   if (packet?.source === "live" && !renderedMessage.own) {
-    handleIncomingUnreadMessage();
+    handleIncomingUnreadMessage(renderedMessage);
   }
 }
 
@@ -83,43 +87,35 @@ export function clearMessages() {
 
 export function clearUnreadAttention() {
   if (state.unreadCount === 0) {
-    syncActionBadge();
+    void syncUnreadAttention(state.unreadCount);
+    void clearUnreadNotifications();
     return;
   }
 
   state.unreadCount = 0;
-  syncActionBadge();
+  void syncUnreadAttention(state.unreadCount);
+  void clearUnreadNotifications();
 }
 
 function isPanelActive() {
   return document.visibilityState === "visible" && document.hasFocus();
 }
 
-function handleIncomingUnreadMessage() {
+function handleIncomingUnreadMessage(message) {
   if (isPanelActive()) {
     clearUnreadAttention();
     return;
   }
 
   state.unreadCount += 1;
-  syncActionBadge();
-}
-
-function syncActionBadge() {
-  if (!canSetExtensionActionBadge()) {
-    return;
-  }
-
-  const text = state.unreadCount > 0
-    ? (state.unreadCount > 99 ? "99+" : String(state.unreadCount))
-    : "";
-  const title = state.unreadCount > 0
-    ? `Koalagram (${state.unreadCount} unread)`
-    : "Open Koalagram";
-
-  void chrome.action.setBadgeBackgroundColor({ color: "#d93025" }).catch(() => {});
-  void chrome.action.setBadgeText({ text }).catch(() => {});
-  void chrome.action.setTitle({ title }).catch(() => {});
+  void syncUnreadAttention(state.unreadCount);
+  void showUnreadNotification({
+    unreadCount: state.unreadCount,
+    channelId: state.currentChat?.channelId || "",
+    chatName: state.currentChat?.chatName || "",
+    senderName: message?.senderName || "Guest",
+    text: message?.text || "",
+  });
 }
 
 function trimMessages() {

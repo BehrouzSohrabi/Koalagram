@@ -1,4 +1,5 @@
 import { PANEL_PORT_NAME } from "../shared/constants.js";
+import { prepareWebNotifications } from "../shared/attention.js";
 import { canConnectToExtensionRuntime, getRuntimeMode } from "../shared/runtime.js";
 import {
   normalizeJoinDraft,
@@ -27,7 +28,7 @@ import { pickRandomFact } from "./facts.js";
 import { currentDeviceId, currentSenderKey, persistSettings } from "./persistence.js";
 import { pickRandomSlogan } from "./slogans.js";
 import { state } from "./state.js";
-import { applyStaticUiIcons } from "./ui/helpers.js";
+import { applyStaticUiIcons, renderButtonContent } from "./ui/helpers.js";
 import {
   clearBanner,
   closeNotice,
@@ -83,6 +84,7 @@ let toastPositionFrame = 0;
 async function init() {
   state.settings = normalizeSettings(null);
   document.body.dataset.runtimeMode = getRuntimeMode();
+  void prepareWebNotifications();
   applySlogan();
   bindEvents();
   applyStaticUiIcons(dom);
@@ -304,17 +306,43 @@ function revealOpenChannelPanel() {
 function renderSetupPanels() {
   const forceJoinPanelOpen = shouldForceOpenJoinPanel();
   const joinPanelOpen = forceJoinPanelOpen || state.openChannelPanelOpen;
+  const identityActionLabel = state.identityPanelOpen
+    ? "Close identity settings"
+    : (state.settings?.user?.displayName ? "Edit identity" : "Set up identity");
 
   dom.identityPanel.hidden = !state.identityPanelOpen;
   dom.identityToggleButton.setAttribute("aria-expanded", String(state.identityPanelOpen));
-  dom.identityToggleAction.textContent = state.identityPanelOpen
-    ? "Close"
-    : (state.settings?.user?.displayName ? "Edit" : "Set up");
+  renderInlineActionIcon(dom.identityToggleAction, {
+    icon: state.identityPanelOpen ? "x" : "pencil-line",
+    label: identityActionLabel,
+  });
 
   dom.openChannelBody.hidden = !joinPanelOpen;
   dom.openChannelToggleButton.hidden = forceJoinPanelOpen;
   dom.openChannelToggleButton.setAttribute("aria-expanded", String(joinPanelOpen));
-  dom.openChannelToggleButton.textContent = joinPanelOpen ? "Hide" : "New";
+  renderButtonContent(dom.openChannelToggleButton, {
+    icon: "x",
+    label: joinPanelOpen ? "Hide open channel form" : "Create new channel",
+    iconOnly: true,
+  });
+}
+
+function renderInlineActionIcon(target, { icon, label }) {
+  if (!target) {
+    return;
+  }
+
+  const content = document.createElement("span");
+  content.className = "drawer-inline-action-content";
+  content.append(createIcon(icon, { size: 14, className: "ui-icon" }));
+
+  const srLabel = document.createElement("span");
+  srLabel.className = "sr-only";
+  srLabel.textContent = label;
+  content.append(srLabel);
+
+  target.replaceChildren(content);
+  target.setAttribute("title", label);
 }
 
 function shouldForceOpenJoinPanel() {
@@ -382,6 +410,7 @@ async function handlePreferenceToggle() {
 
 async function handleJoinSubmit(event) {
   event.preventDefault();
+  await prepareWebNotifications({ promptIfNeeded: true });
 
   const user = normalizeUserIdentity(state.settings.user);
   const draftChannelId = state.settings.joinDraft.channelId;
@@ -463,10 +492,10 @@ async function handleCopyInvite() {
   }
 
   const inviteText = [
-    activeChat.chatName || "Koalagram channel",
+    activeChat.chatName || "Koalagram",
     `Channel ID: ${activeChat.channelId}`,
     "",
-    "Open the Koalagram extension, paste the channel ID, set your name if needed, and open the channel.",
+    "Open the Koalagram extension, or webapp, paste the channel ID, set your name if needed, and open the channel.",
   ].join("\n");
 
   try {
@@ -596,8 +625,17 @@ async function handleManualSync() {
     return;
   }
 
-  await requestHistorySync("manual");
-  pushToast("Requested a history sync from connected peers.");
+  if (!state.client || state.client.state !== "connected") {
+    showBanner("Reconnect to the channel before requesting a peer sync.", "warning");
+    return;
+  }
+
+  try {
+    await requestHistorySync("manual");
+    pushToast("Requested a history sync from connected peers.");
+  } catch (error) {
+    showBanner(error.message || "Unable to request a history sync from connected peers.", "error");
+  }
 }
 
 async function handleClearCurrentStorage() {

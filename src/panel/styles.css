@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  --page-bg: #dbe7f2;
+  --page-bg: #ffffff;
   --page-bg-secondary: #c6d8e9;
   --shell-bg: #eff5fb;
   --panel-bg: rgba(255, 255, 255, 0.92);
@@ -73,7 +73,7 @@ body {
 body {
   font-family: "Avenir Next", "Segoe UI", sans-serif;
   color: var(--copy);
-  background: var(--shell-bg);
+  background: var(--page-bg);
   overflow: hidden;
   max-width: 700px;
   margin: 0 auto;
@@ -85,6 +85,11 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+input[type="color"] {
+  height: 48px;
+  padding: 8px;
 }
 
 button {
@@ -148,14 +153,12 @@ code {
 
 .chat-screen {
   position: relative;
-  z-index: 1;
   display: flex;
   flex-direction: column;
   height: 100%;
   background:
     linear-gradient(45deg, rgba(76, 141, 246, 0.035) 25%, transparent 25%, transparent 50%, rgba(76, 141, 246, 0.035) 50%, rgba(76, 141, 246, 0.035) 75%, transparent 75%, transparent),
-    linear-gradient(135deg, rgba(76, 141, 246, 0.025) 25%, transparent 25%, transparent 50%, rgba(76, 141, 246, 0.025) 50%, rgba(76, 141, 246, 0.025) 75%, transparent 75%, transparent),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.24), transparent 20%);
+    linear-gradient(135deg, rgba(76, 141, 246, 0.025) 25%, transparent 25%, transparent 50%, rgba(76, 141, 246, 0.025) 50%, rgba(76, 141, 246, 0.025) 75%, transparent 75%, transparent);
   background-size: 30px 30px, 30px 30px, auto;
 }
 
@@ -264,7 +267,13 @@ code {
 
 .button-icon-only {
   width: 40px;
+  min-width: 40px;
   padding: 0;
+}
+
+.small-button.button-icon-only {
+  width: 34px;
+  min-width: 34px;
 }
 
 .button-content,
@@ -476,6 +485,19 @@ body[data-theme="dusk"] .ghost-button {
   background: rgba(255, 255, 255, 0.42);
 }
 
+.actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  width: 100%;
+}
+
+.actions-list button {
+  justify-content: flex-start;
+  font-weight: 500;
+}
+
 body[data-theme="dusk"] .drawer-card,
 body[data-theme="dusk"] .drawer-section {
   background: rgba(255, 255, 255, 0.02);
@@ -501,22 +523,22 @@ body[data-theme="dusk"] .drawer-section {
 
 .identity-card {
   padding: 8px;
+  grid-template-columns: auto
 }
 
 .identity-toggle-button {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
   gap: 12px;
   align-items: center;
-  width: 100%;
-  padding: 6px;
-  border-radius: var(--radius-sm);
-  text-align: left;
-  transition: background var(--transition), transform var(--transition);
 }
 
 .identity-toggle-button:hover {
   background: rgba(255, 255, 255, 0.24);
+}
+
+.identity-copy {
+  flex-grow: 1;
+  align-items: baseline;
 }
 
 body[data-theme="dusk"] .identity-toggle-button:hover {
@@ -527,13 +549,20 @@ body[data-theme="dusk"] .identity-toggle-button:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 30px;
-  padding: 0 10px;
+  height: 34px;
+  width: 34px;
+  padding: 0 8px;
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-strong);
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.drawer-inline-action-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .drawer-section-collapsible[hidden],
@@ -547,7 +576,6 @@ body[data-theme="dusk"] .identity-toggle-button:hover {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
 .identity-copy strong,
@@ -581,6 +609,10 @@ body[data-theme="dusk"] .identity-toggle-button:hover {
   padding-top: 2px;
 }
 
+button[aria-controls="open-channel-body"][aria-expanded="false"] {
+  transform: rotate(45deg);
+}
+
 .two-column {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -590,8 +622,8 @@ body[data-theme="dusk"] .identity-toggle-button:hover {
 .toggle-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-bottom: 12px;
+  gap: 6px;
+  margin: 12px 0;
 }
 
 .toggle-row {
@@ -599,7 +631,6 @@ body[data-theme="dusk"] .identity-toggle-button:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 0;
 }
 
 .toggle-row input {
@@ -941,7 +972,7 @@ body[data-theme="dusk"] .system-message {
 }
 
 .channel-list {
-  margin: 0;
+  margin: 12px 0 0;
   padding: 0;
   list-style: none;
   display: flex;
@@ -972,7 +1003,7 @@ body[data-theme="dusk"] .channel-list-empty {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.54);
-  padding: 12px;
+  padding: 6px 6px 6px 12px;
   text-align: left;
   transition: transform var(--transition), background var(--transition), border-color var(--transition), box-shadow var(--transition);
 }
@@ -1022,7 +1053,8 @@ body[data-theme="dusk"] .channel-list-item-active .channel-list-button {
 }
 
 .channel-list-title {
-  font-weight: 700;
+  font-size: .9em;
+  margin-left: 6px;
 }
 
 .channel-list-id,
@@ -1103,7 +1135,7 @@ body[data-theme="dusk"] .channel-active-pill {
   position: absolute;
   top: 0;
   left: 50%;
-  z-index: 1;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
