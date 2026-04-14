@@ -3,13 +3,13 @@ export function getRuntimeMode() {
 }
 
 export function hasExtensionStorage() {
-  return Boolean(globalThis.chrome?.storage?.local);
+  return getRuntimeMode() === "extension" && Boolean(globalThis.chrome?.storage?.local);
 }
 
 export function canConnectToExtensionRuntime() {
-  return typeof globalThis.chrome?.runtime?.connect === "function";
+  return getRuntimeMode() === "extension" && typeof globalThis.chrome?.runtime?.connect === "function";
 }
 
 export function canSetExtensionActionBadge() {
-  return Boolean(globalThis.chrome?.action);
+  return getRuntimeMode() === "extension" && Boolean(globalThis.chrome?.action);
 }
